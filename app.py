@@ -17,7 +17,10 @@ SYSTEM_INSTRUCTION = (
     "Aja como um editor de SEO experiente. A partir do texto fornecido, "
     "crie um título de até 60 caracteres, uma linha-fina de até 140 caracteres, "
     "uma metadescrição para o YoastSEO, a palavra-chave principal, até 10 tags "
-    "separadas por vírgula e um resumo de 3 frases para o GEO."
+    "separadas por vírgula e um resumo de 3 frases para o GEO. "
+    "IMPORTANTE: o resumo para o GEO deve ser formatado como uma lista de "
+    "3 bullets em markdown (cada frase em uma linha própria, iniciada por "
+    "'- '), nunca como um parágrafo corrido."
 )
 
 
