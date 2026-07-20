@@ -14,31 +14,41 @@ st.set_page_config(page_title="Roteirizador de Podcast", page_icon="🎙️")
 st.title("🎙️ Roteirizador de Podcast")
 st.caption("Disciplina Inteligência Artificial e Automação nas Redações")
 
-SYSTEM_INSTRUCTION = (
-    "Aja como um roteirista experiente de podcasts jornalísticos e rádio "
-    "digital. A partir do texto de uma notícia, transforme-o em um roteiro "
-    "sonoro pronto para narração em áudio — não é um resumo, é uma "
-    "adaptação para o ouvido: frases mais curtas, ritmo falado, transições "
-    "claras entre blocos. "
-    "Responda SOMENTE em JSON válido, sem markdown, sem texto fora do JSON, "
-    "seguindo exatamente este formato:\n"
-    "{\n"
-    '  "titulo_episodio": "string, curto e atrativo",\n'
-    '  "duracao_estimada": "string, ex: \'3 a 4 minutos\'",\n'
-    '  "gancho_abertura": "string, os primeiros 10-15 segundos falados, '
-    'pensados para prender atenção imediata",\n'
-    '  "roteiro": [\n'
-    "    {\n"
-    '      "secao": "string, ex: Abertura / Contexto / Desenvolvimento / Encerramento",\n'
-    '      "texto": "string, o texto a ser narrado nesta seção",\n'
-    '      "indicacao_tom": "string curta, ex: \'tom sério, pausa de 2s '
-    'antes desta frase\' ou \'ritmo mais leve aqui\'"\n'
-    "    }\n"
-    "  ],\n"
-    '  "cta_encerramento": "string, uma chamada final para o próximo '
-    'episódio ou para a audiência comentar/seguir"\n'
-    "}"
-)
+PALAVRAS_POR_MINUTO = 150  # ritmo médio de locução em português
+
+
+def montar_system_instruction(duracao_alvo_min: float) -> str:
+    palavras_alvo = int(duracao_alvo_min * PALAVRAS_POR_MINUTO)
+    return (
+        "Aja como um roteirista experiente de podcasts jornalísticos e rádio "
+        "digital. A partir do texto de uma notícia, transforme-o em um roteiro "
+        "sonoro pronto para narração em áudio — não é um resumo, é uma "
+        "adaptação para o ouvido: frases mais curtas, ritmo falado, transições "
+        "claras entre blocos. "
+        f"RESTRIÇÃO IMPORTANTE DE TAMANHO: o roteiro completo (soma de todos os "
+        f"campos 'texto', mais o gancho de abertura e o encerramento) deve ter "
+        f"aproximadamente {palavras_alvo} palavras no total, para caber em "
+        f"cerca de {duracao_alvo_min:.0f} minuto(s) de locução a um ritmo de "
+        f"{PALAVRAS_POR_MINUTO} palavras por minuto. Não ultrapasse esse limite "
+        "de forma significativa. "
+        "Responda SOMENTE em JSON válido, sem markdown, sem texto fora do JSON, "
+        "seguindo exatamente este formato:\n"
+        "{\n"
+        '  "titulo_episodio": "string, curto e atrativo",\n'
+        '  "gancho_abertura": "string, os primeiros 10-15 segundos falados, '
+        'pensados para prender atenção imediata",\n'
+        '  "roteiro": [\n'
+        "    {\n"
+        '      "secao": "string, ex: Abertura / Contexto / Desenvolvimento / Encerramento",\n'
+        '      "texto": "string, o texto a ser narrado nesta seção",\n'
+        '      "indicacao_tom": "string curta, ex: \'tom sério, pausa de 2s '
+        'antes desta frase\' ou \'ritmo mais leve aqui\'"\n'
+        "    }\n"
+        "  ],\n"
+        '  "cta_encerramento": "string, uma chamada final para o próximo '
+        'episódio ou para a audiência comentar/seguir"\n'
+        "}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -57,9 +67,10 @@ def carregar_cliente():
     return genai.Client(api_key=chave)
 
 
-def chamar_gemini_com_retry(client, news_text, max_tentativas=5):
+def chamar_gemini_com_retry(client, news_text, duracao_alvo_min, max_tentativas=5):
     """Chama a API com nova tentativa automática em caso de sobrecarga (503)."""
     espera = 5  # segundos, dobra a cada tentativa
+    system_instruction = montar_system_instruction(duracao_alvo_min)
 
     for tentativa in range(1, max_tentativas + 1):
         try:
@@ -70,7 +81,7 @@ def chamar_gemini_com_retry(client, news_text, max_tentativas=5):
                 model="gemini-3.1-flash-lite",
                 contents=news_text,
                 config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
+                    system_instruction=system_instruction,
                     temperature=0.4,
                     response_mime_type="application/json",
                 ),
@@ -84,6 +95,14 @@ def chamar_gemini_com_retry(client, news_text, max_tentativas=5):
             )
             time.sleep(espera)
             espera *= 2
+
+
+def calcular_duracao_real(kit: dict) -> float:
+    """Calcula a duração estimada em minutos a partir da contagem real de palavras."""
+    textos = [kit.get("gancho_abertura", ""), kit.get("cta_encerramento", "")]
+    textos += [bloco.get("texto", "") for bloco in kit.get("roteiro", [])]
+    total_palavras = sum(len(t.split()) for t in textos)
+    return total_palavras / PALAVRAS_POR_MINUTO
 
 
 def render_roteiro(roteiro: list):
@@ -124,6 +143,13 @@ news_text = st.text_area(
     placeholder="Cole aqui o texto completo da matéria...",
 )
 
+duracao_alvo = st.select_slider(
+    "Duração-alvo do episódio:",
+    options=[1, 2, 3, 4, 5],
+    value=2,
+    format_func=lambda x: f"{x} minuto{'s' if x > 1 else ''}",
+)
+
 gerar = st.button("Gerar roteiro de podcast", type="primary")
 
 if gerar:
@@ -133,7 +159,7 @@ if gerar:
         client = carregar_cliente()
         with st.spinner("Adaptando o texto para áudio..."):
             try:
-                resposta = chamar_gemini_com_retry(client, news_text)
+                resposta = chamar_gemini_com_retry(client, news_text, duracao_alvo)
 
                 try:
                     kit = json.loads(resposta.text)
@@ -148,8 +174,20 @@ if gerar:
                 if kit:
                     st.success("Roteiro gerado com sucesso!")
 
+                    duracao_real = calcular_duracao_real(kit)
+
                     st.markdown(f"## {kit.get('titulo_episodio', '')}")
-                    st.caption(f"⏱️ Duração estimada: {kit.get('duracao_estimada', '')}")
+                    if duracao_real > duracao_alvo * 1.3:
+                        st.caption(
+                            f"⏱️ Duração calculada: ~{duracao_real:.1f} min "
+                            f"(alvo era {duracao_alvo} min — o modelo passou do "
+                            "combinado; considere gerar de novo ou editar o texto)"
+                        )
+                    else:
+                        st.caption(
+                            f"⏱️ Duração calculada: ~{duracao_real:.1f} min "
+                            f"(alvo: {duracao_alvo} min)"
+                        )
 
                     st.markdown("### 🎯 Gancho de abertura")
                     st.info(kit.get("gancho_abertura", ""))
