@@ -37,14 +37,19 @@ def carregar_cliente():
     return genai.Client(api_key=chave)
 
 
-def chamar_gemini_com_retry(client, news_text, max_tentativas=3):
+def chamar_gemini_com_retry(client, news_text, max_tentativas=5):
     """Chama a API com nova tentativa automática em caso de sobrecarga (503)."""
     espera = 5  # segundos, dobra a cada tentativa
 
     for tentativa in range(1, max_tentativas + 1):
         try:
             return client.models.generate_content(
-                model="gemini-2.5-flash-lite",
+                # gemini-3.1-flash-lite: modelo GA (não-preview) da família
+                # Gemini 3, otimizado para tarefas de alto volume e baixo
+                # custo/latência. Mais estável que o alias "latest", que
+                # pode apontar para versões em preview com menos capacidade
+                # de servidores (mais 503).
+                model="gemini-3.1-flash-lite",
                 contents=news_text,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
