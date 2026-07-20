@@ -72,6 +72,11 @@ def chamar_gemini_com_retry(client, news_text, duracao_alvo_min, max_tentativas=
     espera = 5  # segundos, dobra a cada tentativa
     system_instruction = montar_system_instruction(duracao_alvo_min)
 
+    # Estimativa generosa de tokens de saída (buffer para JSON + tokens/palavra
+    # em português), para não truncar roteiros mais longos.
+    palavras_alvo = duracao_alvo_min * PALAVRAS_POR_MINUTO
+    max_output_tokens = min(int(palavras_alvo * 3) + 500, 8192)
+
     for tentativa in range(1, max_tentativas + 1):
         try:
             return client.models.generate_content(
@@ -84,6 +89,7 @@ def chamar_gemini_com_retry(client, news_text, duracao_alvo_min, max_tentativas=
                     system_instruction=system_instruction,
                     temperature=0.4,
                     response_mime_type="application/json",
+                    max_output_tokens=max_output_tokens,
                 ),
             )
         except ServerError:
@@ -143,12 +149,16 @@ news_text = st.text_area(
     placeholder="Cole aqui o texto completo da matéria...",
 )
 
-duracao_alvo = st.select_slider(
-    "Duração-alvo do episódio:",
-    options=[1, 2, 3, 4, 5],
+duracao_alvo = st.number_input(
+    "Duração-alvo do episódio (minutos):",
+    min_value=1,
+    max_value=60,
     value=2,
-    format_func=lambda x: f"{x} minuto{'s' if x > 1 else ''}",
+    step=1,
+    help="Evite podcasts acima de 15 minutos — roteiros muito longos tendem "
+    "a perder ritmo e consistência, tanto na geração quanto na escuta.",
 )
+st.caption("⚠️ Evite podcasts acima de 15 minutos.")
 
 gerar = st.button("Gerar roteiro de podcast", type="primary")
 
