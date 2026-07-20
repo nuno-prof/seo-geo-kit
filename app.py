@@ -44,7 +44,7 @@ def chamar_gemini_com_retry(client, news_text, max_tentativas=3):
     for tentativa in range(1, max_tentativas + 1):
         try:
             return client.models.generate_content(
-                model="gemini-flash-latest",
+                model="gemini-2.5-flash-lite",
                 contents=news_text,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
